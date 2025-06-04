@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>لوحة تحكم الأدمن - أكاديمية غيث</title>
+  </head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h2>لوحة تحكم الأدمن</h2>
+      <p>أهلاً بك، <span id="adminUsername"></span>!</p>
+      <div class="dashboard-actions">
+        <button onclick="navigateTo('StudentManagement')">إدارة الطلاب</button>
+        <button onclick="navigateTo('TeacherManagement')">إدارة المعلمين</button>
+        <button onclick="navigateTo('FinancialReports')">التقارير المالية</button>
+        <button onclick="navigateTo('FinancialTransactions')">إدارة الحسابات المالية</button>
+        <button onclick="logout()">تسجيل الخروج</button>
+      </div>
+    </div>
+  </div>
+  </body>
+</html>
