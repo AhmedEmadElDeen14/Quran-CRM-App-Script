@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>إدارة الطلاب - أكاديمية غيث</title>
+  </head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>إدارة الطلاب</h2>
+        <button onclick="goBack()">العودة</button>
+      </div>
+
+      <div style="text-align: right; margin-bottom: 20px;">
+        <button onclick="navigateTo('AddStudent')">إضافة طالب جديد</button>
+        <button onclick="navigateTo('ViewAllStudents')">عرض/تعديل كافة الطلاب</button>
+        <button onclick="navigateTo('StudentAttendanceRenewal')">متابعة الحضور والتجديد</button>
+      </div>
+
+      <div id="message" class="message"></div>
+    </div>
+  </div>
+  </body>
+</html>
