@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>تعديل بيانات الطالب - أكاديمية غيث</title>
+  </head>
+<body>
+  <div class="container-full">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 id="pageTitle">تعديل بيانات الطالب:</h2>
+        <button onclick="goBack()">العودة</button>
+      </div>
+
+      <div id="loading" class="message info" style="display: none;">جاري تحميل بيانات الطالب...</div>
+      <div id="message" class="message" style="display: none;"></div>
+
+      <form id="studentForm" style="display: none;">
+        <div class="form-section">
+          <h3>البيانات الأساسية</h3>
+          <div class="form-group">
+            <label for="name">الاسم:</label>
+            <input type="text" id="name" name="Name" required>
+          </div>
+          <div class="form-group">
+            <label for="age">السن:</label>
+            <input type="number" id="age" name="Age" required>
+          </div>
+          <div class="form-group">
+            <label for="phone">رقم الهاتف:</label>
+            <input type="text" id="phone" name="Phone" required>
+          </div>
+          <div class="form-group">
+            <label for="gender">الجنس:</label>
+            <select id="gender" name="Gender" required>
+              <option value="غير محدد">غير محدد</option>
+              <option value="ذكر">ذكر</option>
+              <option value="أنثى">أنثى</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>بيانات ولي الأمر</h3>
+          <div class="form-group">
+            <label for="guardianName">اسم ولي الأمر:</label>
+            <input type="text" id="guardianName" name="GuardianName">
+          </div>
+          <div class="form-group">
+            <label for="guardianPhone">رقم هاتف ولي الأمر:</label>
+            <input type="text" id="guardianPhone" name="GuardianPhone">
+          </div>
+          <div class="form-group">
+            <label for="guardianRelation">علاقة ولي الأمر:</label>
+            <input type="text" id="guardianRelation" name="GuardianRelation">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>تفاصيل الاشتراك</h3>
+          <div class="form-group">
+            <label for="subscriptionType">نوع الاشتراك:</label>
+            <select id="subscriptionType" name="SubscriptionType" required onchange="handleSubscriptionTypeChange()">
+              <option value="حلقة تجريبية">حلقة تجريبية</option>
+              <option value="نصف ساعة / 4 حصص">نصف ساعة / 4 حصص</option>
+              <option value="نصف ساعة / 8 حصص">نصف ساعة / 8 حصص</option>
+              <option value="ساعة / 4 حصص">ساعة / 4 حصص</option>
+              <option value="ساعة / 8 حصص">ساعة / 8 حصص</option>
+              <option value="مخصص">مخصص</option>
+              <option value="أخرى">أخرى</option>
+            </select>
+          </div>
+          <div class="form-group" id="durationGroup" style="display: none;">
+            <label for="duration">مدة الحلقة (مخصص/تجريبي):</label>
+            <select id="duration" name="Duration" onchange="handleDurationChange()">
+              <option value="نصف ساعة">نصف ساعة</option>
+              <option value="ساعة">ساعة</option>
+              <option value="ساعة ونصف">ساعة ونصف</option>
+              <option value="ساعتين">ساعتين</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="paymentStatus">حالة الدفع:</label>
+            <select id="paymentStatus" name="PaymentStatus">
+              <option value="تم الدفع">تم الدفع</option>
+              <option value="لم يتم الدفع">لم يتم الدفع</option>
+              <option value="تم دفع جزء">تم دفع جزء</option>
+              <option value="حلقة تجريبية">حلقة تجريبية</option>
+              <option value="لم يشترك">لم يشترك</option>
+              <option value="مدفوع">مدفوع</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="paymentAmount">قيمة الدفع:</label>
+            <input type="number" id="paymentAmount" name="PaymentAmount" required>
+          </div>
+          <div class="form-group">
+            <label for="paymentDate">تاريخ آخر دفعة:</label>
+            <input type="date" id="paymentDate" name="PaymentDate">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>تحديد المواعيد الأسبوعية</h3>
+          <div class="form-group">
+            <label for="teacherId">اختر المعلم:</label>
+            <select id="teacherId" name="TeacherID" required onchange="handleTeacherChange()">
+              <option value="">-- اختر المعلم --</option>
+              </select>
+          </div>
+
+          <div id="teacherSlotsSelection" style="margin-top: 20px;">
+            <p id="noTeacherSlotsMessage" style="text-align: center; color: #777; display: none;">لا توجد مواعيد متاحة لهذا المعلم.</p>
+            <div id="timeSlotsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+              </div>
+          </div>
+
+          <div id="selectedTimeSlotsDisplay" class="card" style="margin-top: 20px; text-align: right; display: none;">
+            <h4>المواعيد المجدولة حالياً للطالب:</h4>
+            <ul id="selectedSlotsList" style="list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px;">
+              </ul>
+          </div>
+        </div>
+        
+        <button type="submit" id="updateStudentButton">تحديث بيانات الطالب</button>
+      </form>
+    </div>
+  </div>
+  </body>
+</html>
