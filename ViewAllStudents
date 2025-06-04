@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>عرض كافة الطلاب - أكاديمية غيث</title>
+  </head>
+<body>
+  <div class="container-full">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>عرض كافة الطلاب</h2>
+        <button onclick="goBack()">العودة</button>
+      </div>
+
+      <div class="filters-search-area">
+        <input type="text" id="searchTerm" placeholder="ابحث بالاسم أو الهاتف" onkeyup="filterStudents()">
+        <select id="filterArchived" onchange="filterStudents()">
+          <option value="false">الطلاب النشطون</option>
+          <option value="true">الطلاب المؤرشفون</option>
+          <option value="all">كل الطلاب</option>
+        </select>
+        <select id="filterTeacher" onchange="filterStudents()">
+          <option value="all">كل المعلمين</option>
+          </select>
+        <select id="filterSubscriptionType" onchange="filterStudents()">
+          <option value="all">كل أنواع الاشتراك</option>
+          <option value="حلقة تجريبية">حلقة تجريبية</option>
+          <option value="نصف ساعة / 4 حصص">نصف ساعة / 4 حصص</option>
+          <option value="نصف ساعة / 8 حصص">نصف ساعة / 8 حصص</option>
+          <option value="ساعة / 4 حصص">ساعة / 4 حصص</option>
+          <option value="ساعة / 8 حصص">ساعة / 8 حصص</option>
+          <option value="مخصص">مخصص</option>
+          <option value="أخرى">أخرى</option>
+        </select>
+      </div>
+
+      <div id="studentsTableContainer" class="data-table-container">
+        </div>
+      <div id="message" class="message"></div>
+      <div id="loading" class="message info" style="display: none;">جاري التحميل...</div>
+    </div>
+  </div>
+  </body>
+</html>
