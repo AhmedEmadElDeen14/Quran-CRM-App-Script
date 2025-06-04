@@ -1,0 +1,1032 @@
+<script>
+  // هذا الملف يحتوي على جميع الدوال JavaScript المساعدة والعامة
+  // التي سيتم تضمينها في ملف index.html الرئيسي.
+
+  // ===========================================
+  //  دوال مساعدة للوقت (من timeHelpers.js الأصلي)
+  // ===========================================
+
+  /**
+   * تحويل الوقت من تنسيق 24 ساعة (مثال: "09:00", "15:30") إلى تنسيق 12 ساعة مع ص/م (مثال: "9:00 ص", "3:30 م").
+   * @param {string} time24hrPart جزء الوقت بتنسيق 24 ساعة (مثال: "09:00").
+   * @returns {string} سلسلة الوقت المنسقة بتنسيق 12 ساعة (مثال: "9:00 ص").
+   */
+  function formatTime12Hour(time24hrPart) {
+    if (typeof time24hrPart !== 'string' || !time24hrPart.includes(':')) {
+      return 'وقت غير صالح';
+    }
+    const [hours, minutes] = time24hrPart.split(':').map(Number);
+    if (isNaN(hours) || isNaN(minutes)) {
+      return 'وقت غير صالح';
+    }
+    const ampm = hours >= 12 ? 'م' : 'ص';
+    const formattedHours = hours % 12 || 12; // تحويل 0 إلى 12 لـ 12 صباحاً/مساءً
+    const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+    return `${formattedHours}:${formattedMinutes} ${ampm}`;
+  }
+
+  /**
+   * تحويل سلسلة فتحة زمنية (مثال: "09:00 - 09:30") إلى إجمالي دقائق من منتصف الليل.
+   * مفيد لفرز الفتحات الزمنية ترتيبياً.
+   * @param {string} timeString سلسلة الفتحة الزمنية الكاملة (مثال: "09:00 - 09:30").
+   * @returns {number} إجمالي الدقائق من منتصف الليل لبداية الفتحة الزمنية، أو -1 إذا كان غير صالح.
+   */
+  function getTimeInMinutes(timeString) {
+    if (typeof timeString !== 'string' || !timeString.includes(':')) {
+      return -1;
+    }
+    // خذ جزء وقت البدء فقط (مثال: "09:00")
+    const timePart = timeString.split(' - ')[0];
+    const [hours, minutes] = timePart.split(':').map(Number);
+    if (isNaN(hours) || isNaN(minutes)) {
+      return -1;
+    }
+    return hours * 60 + minutes;
+  }
+
+  // ===========================================
+  //  دوال واجهة المستخدم العامة (الرسائل، التحميل)
+  // ===========================================
+
+  /**
+   * لعرض رسالة تحميل في الواجهة الأمامية.
+   * @param {string} message رسالة التحميل.
+   */
+  function showLoading(message = 'جاري التحميل...') {
+    const appContainer = document.getElementById('app-container');
+    appContainer.innerHTML = `
+      <div style="text-align: center; padding: 50px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <div class="message info" style="display: block; margin: 0 auto;">${message}</div>
+      </div>
+    `;
+    clearMessage(); // إزالة أي رسائل سابقة
+  }
+
+  /**
+   * لإخفاء رسالة التحميل.
+   */
+  function hideLoading() {
+    // هذه الدالة قد لا تكون ضرورية إذا كانت loadPageContent تستبدل المحتوى
+    // ولكنها تبقى كـ placeholder
+  }
+
+  /**
+   * لعرض رسالة للمستخدم (نجاح، خطأ، معلومات، تحذير).
+   * @param {string} msg نص الرسالة.
+   * @param {'success'|'error'|'info'|'warning'} type نوع الرسالة.
+   */
+  function showMessage(msg, type) {
+    let msgContainer = document.getElementById('global-message-container');
+    if (!msgContainer) {
+      msgContainer = document.createElement('div');
+      msgContainer.id = 'global-message-container';
+      document.body.prepend(msgContainer); 
+    }
+
+    msgContainer.innerHTML = `<div class="message ${type}" style="display: block;">${msg}</div>`;
+    
+    setTimeout(() => {
+      clearMessage();
+    }, 5000); 
+  }
+
+  /**
+   * لإخفاء جميع الرسائل.
+   */
+  function clearMessage() {
+    const msgContainer = document.getElementById('global-message-container');
+    if (msgContainer) msgContainer.innerHTML = '';
+  }
+
+  // ===========================================
+  //  دوال التنقل وإدارة المحتوى
+  // ===========================================
+
+  // قائمة بأنواع الاشتراكات (للاستخدام في JavaScript في الواجهة الأمامية)
+  const SUBSCRIPTION_SLOTS_MAP = {
+    'نصف ساعة / 4 حصص': 4,
+    'نصف ساعة / 8 حصص': 8,
+    'ساعة / 4 حصص': 8,
+    'ساعة / 8 حصص': 16,
+    'مخصص': 24, 
+    'حلقة تجريبية': 1,
+    'أخرى': 0
+  };
+
+  /**
+   * لطلب محتوى صفحة HTML من الخادم وعرضها في `app-container`.
+   * @param {string} pageName اسم ملف HTML للصفحة المطلوب تحميل محتواها.
+   * @param {Object} [params={}] معلمات لتمريرها إلى وظيفة تهيئة الصفحة (init_pageName).
+   * @param {Function} [callback] دالة تُنفذ بعد تحميل المحتوى بنجاح.
+   */
+  function loadPageContent(pageName, params = {}, callback) {
+    showLoading(); 
+    google.script.run
+      .withSuccessHandler(function(htmlContent) {
+        document.getElementById('app-container').innerHTML = htmlContent;
+        clearMessage(); 
+        
+        // **الآن نشغل دالة التهيئة الخاصة بالصفحة بعد تحميل محتواها.**
+        // يجب أن يكون لكل صفحة دالة تهيئة باسم init_PageName()
+        if (typeof window['init_' + pageName] === 'function') {
+            window['init_' + pageName](params); // نمرر المعلمات لدالة التهيئة
+        }
+        if (callback) callback();
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        showMessage('فشل تحميل الصفحة: ' + error.message, 'error');
+        console.error('Error loading page content:', error);
+        navigateTo('LoginPage'); // العودة لصفحة تسجيل الدخول عند الفشل الحرج
+      })
+      .getHtmlContent(pageName); 
+  }
+
+  /**
+   * دالة التنقل الرئيسية بين أقسام التطبيق (الصفحات الافتراضية).
+   * تُحدث `localStorage` بالصفحة الحالية والمعلمات، ثم تستدعي `loadPageContent`.
+   * @param {string} pageName اسم الصفحة (ملف HTML) للانتقال إليها.
+   * @param {Object} [params={}] معلمات إضافية لتمريرها إلى الصفحة المستهدفة.
+   */
+  function navigateTo(pageName, params = {}) {
+    localStorage.setItem('currentPage', pageName);
+    localStorage.setItem('currentPageParams', JSON.stringify(params));
+    
+    // لا نستخدم google.script.history.replace هنا لإجبار إعادة تحميل الـ iframe.
+    // بدلاً من ذلك، نُحدث محتوى الـ iframe يدوياً باستخدام loadPageContent.
+    loadPageContent(pageName, params);
+  }
+  
+  /**
+   * دالة تسجيل الخروج.
+   */
+  function logout() {
+    localStorage.clear();
+    localStorage.setItem('currentPage', 'LoginPage');
+    navigateTo('LoginPage'); // استخدام navigateTo للانتقال إلى صفحة تسجيل الدخول
+  }
+
+  // ===========================================
+  //  دوال تهيئة الصفحات (ستنقل إليها سكربتات الصفحات)
+  // ===========================================
+
+  // تهيئة LoginPage
+  window.init_LoginPage = function() {
+    const loginButton = document.getElementById('loginButton');
+    if (loginButton) loginButton.disabled = false; // تأكد أن الزر غير معطل عند التحميل
+    
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      loginButton.disabled = true;
+      showLoading('جاري تسجيل الدخول...');
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          hideLoading();
+          loginButton.disabled = false;
+          if (response.success) {
+            showMessage(response.message, 'success');
+            
+            // تخزين معلومات المستخدم في localStorage
+            localStorage.setItem('userRole', response.role);
+            localStorage.setItem('username', response.username);
+            localStorage.setItem('teacherProfileId', response.teacherProfileId); 
+
+            // بعد تسجيل الدخول بنجاح، انتقل إلى لوحة التحكم المناسبة
+            let targetPageName;
+            if (response.role === 'Admin') {
+              targetPageName = 'AdminDashboard';
+            } else if (response.role === 'Teacher') {
+              targetPageName = 'TeacherDashboard';
+            } else {
+              targetPageName = 'LoginPage'; // Fallback
+            }
+
+            navigateTo(targetPageName); 
+
+          } else { 
+            showMessage(response.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          loginButton.disabled = false;
+          showMessage('خطأ في الاتصال: ' + error.message, 'error');
+          console.error('Error:', error);
+        })
+        .processLogin(username, password);
+    });
+  };
+
+  // تهيئة AdminDashboard
+  window.init_AdminDashboard = function() {
+    const usernameSpan = document.getElementById('adminUsername');
+    if (usernameSpan) {
+      const username = localStorage.getItem('username');
+      if (username) usernameSpan.textContent = username;
+    }
+  };
+
+  // تهيئة StudentManagement
+  window.init_StudentManagement = function() {
+    // لا يوجد كود تهيئة خاص هنا حالياً
+  };
+
+  // تهيئة ViewAllStudents
+  let allStudentsData = [];
+  let allTeachersData = [];
+
+  window.init_ViewAllStudents = function() {
+    // تهيئة عناصر DOM
+    const searchTermInput = document.getElementById('searchTerm');
+    const filterArchivedSelect = document.getElementById('filterArchived');
+    const filterTeacherSelect = document.getElementById('filterTeacher');
+    const filterSubscriptionTypeSelect = document.getElementById('filterSubscriptionType');
+    const studentsTableContainer = document.getElementById('studentsTableContainer');
+
+    // التأكد من وجود العناصر قبل إضافة المستمعين
+    if (searchTermInput) searchTermInput.onkeyup = filterStudents;
+    if (filterArchivedSelect) filterArchivedSelect.onchange = filterStudents;
+    if (filterTeacherSelect) filterTeacherSelect.onchange = filterStudents;
+    if (filterSubscriptionTypeSelect) filterSubscriptionTypeSelect.onchange = filterStudents;
+
+    // استدعاء جلب البيانات الأولية
+    fetchAndRenderStudents();
+  };
+
+  function fetchAndRenderStudents() {
+    showLoading('جاري تحميل بيانات الطلاب والمعلمين...');
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          allStudentsData = response.students;
+          allTeachersData = response.teachers;
+          populateTeachersFilter();
+          filterStudents(); // عرض الطلاب بعد الجلب
+        } else {
+          showMessage(response.message, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        showMessage('فشل في تحميل البيانات: ' + error.message, 'error');
+        console.error('Error:', error);
+      })
+      .getAllStudentsAndTeachers({ // تمرير المعلمات
+        isArchived: document.getElementById('filterArchived')?.value || 'false',
+        teacherId: document.getElementById('filterTeacher')?.value || 'all'
+      });
+  }
+
+  function populateTeachersFilter() {
+    const select = document.getElementById('filterTeacher');
+    if (!select) return;
+    select.innerHTML = '<option value="all">كل المعلمين</option>';
+    allTeachersData.forEach(teacher => {
+      const option = document.createElement('option');
+      option.value = teacher.TeacherID;
+      option.textContent = teacher.Name;
+      select.appendChild(option);
+    });
+  }
+
+  function filterStudents() {
+    const searchTerm = (document.getElementById('searchTerm')?.value || '').toLowerCase();
+    const filterArchived = (document.getElementById('filterArchived')?.value || 'false');
+    const filterTeacher = (document.getElementById('filterTeacher')?.value || 'all');
+    const filterSubscriptionType = (document.getElementById('filterSubscriptionType')?.value || 'all');
+
+    let filtered = allStudentsData.filter(student => {
+      const nameMatch = (student.Name || '').toLowerCase().includes(searchTerm);
+      const phoneMatch = (student.Phone || '').includes(searchTerm);
+      const subscriptionMatch = (student.SubscriptionType || '').toLowerCase().includes(searchTerm);
+      const teacherName = (student.TeacherID && allTeachersData.find(t => t.TeacherID === student.TeacherID)?.Name || '');
+      const teacherNameMatch = teacherName.toLowerCase().includes(searchTerm);
+
+      const matchesSearch = nameMatch || phoneMatch || subscriptionMatch || teacherNameMatch;
+
+      const matchesArchive = (filterArchived === 'all') || (student.IsArchived === (filterArchived === 'true'));
+      const matchesTeacher = (filterTeacher === 'all') || (student.TeacherID === filterTeacher);
+      const matchesSubscription = (filterSubscriptionType === 'all') || (student.SubscriptionType === filterSubscriptionType);
+
+      return matchesSearch && matchesArchive && matchesTeacher && matchesSubscription;
+    });
+
+    renderStudentsTable(filtered);
+  }
+
+  function renderStudentsTable(studentsToDisplay) {
+    const tableContainer = document.getElementById('studentsTableContainer');
+    if (!tableContainer) return;
+    if (studentsToDisplay.length === 0) {
+      tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #777;">لا يوجد طلاب مطابقون لمعايير البحث أو التصفية.</div>';
+      return;
+    }
+
+    let tableHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>الاسم</th>
+            <th>رقم الهاتف</th>
+            <th>المعلم</th>
+            <th>نوع الاشتراك</th>
+            <th>الحالة</th>
+            <th style="text-align: center;">حصص مكتملة</th>
+            <th style="text-align: center;">غيابات</th>
+            <th style="text-align: center;">يحتاج تجديد؟</th>
+            <th style="text-align: center;">الإجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    studentsToDisplay.forEach(student => {
+      const teacherName = allTeachersData.find(t => t.TeacherID === student.TeacherID)?.Name || 'غير محدد';
+      const isArchivedClass = student.IsArchived ? 'archived-row' : '';
+
+      tableHTML += `
+        <tr class="${isArchivedClass}">
+          <td>${student.Name}</td>
+          <td>${student.Phone}</td>
+          <td>${teacherName}</td>
+          <td>${student.SubscriptionType}</td>
+          <td>${student.IsArchived ? 'مؤرشف' : 'نشط'}</td>
+          <td style="text-align: center;">${student.SessionsCompletedThisPeriod || 0}</td>
+          <td style="text-align: center;">${student.AbsencesThisPeriod || 0}</td>
+          <td style="text-align: center;">${student.IsRenewalNeeded ? 'نعم' : 'لا'}</td>
+          <td style="text-align: center;" class="actions-cell">
+            <button onclick="navigateTo('EditStudent', { id: '${student.StudentID}' })" style="background-color: #3b82f6;">تعديل</button>
+            ${student.IsArchived ?
+              `<button onclick="unarchiveStudent('${student.StudentID}')" style="background-color: #22c55e;">إلغاء الأرشفة</button>` :
+              `<button onclick="archiveStudent('${student.StudentID}')" style="background-color: #f59e0b;">أرشفة</button>`
+            }
+          </td>
+        </tr>
+      `;
+    });
+
+    tableHTML += `</tbody></table>`;
+    tableContainer.innerHTML = tableHTML;
+  }
+
+  function archiveStudent(studentId) {
+    const studentName = allStudentsData.find(s => s.StudentID === studentId)?.Name || 'هذا الطالب';
+    const reason = prompt('يرجى إدخال سبب أرشفة الطالب ' + studentName + ':');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert('السبب مطلوب للأرشفة.');
+      return;
+    }
+    showLoading('جاري أرشفة الطالب...');
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          showMessage(response.message, 'success');
+          fetchAndRenderStudents(); // إعادة جلب البيانات
+        } else {
+          showMessage(response.message, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        showMessage('فشل الأرشفة: ' + error.message, 'error');
+        console.error('Error archiving student:', error);
+      })
+      .archiveStudent(studentId, reason);
+  }
+
+  function unarchiveStudent(studentId) {
+    const studentName = allStudentsData.find(s => s.StudentID === studentId)?.Name || 'هذا الطالب';
+    if (!confirm('هل أنت متأكد من إلغاء أرشفة الطالب ' + studentName + '؟')) {
+      return;
+    }
+    showLoading('جاري إلغاء أرشفة الطالب...');
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideLoading();
+        if (response.success) {
+          showMessage(response.message, 'success');
+          fetchAndRenderStudents(); // إعادة جلب البيانات
+        } else {
+          showMessage(response.message, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        hideLoading();
+        showMessage('فشل إلغاء الأرشفة: ' + error.message, 'error');
+        console.error('Error unarchiving student:', error);
+      })
+      .unarchiveStudent(studentId);
+  }
+
+  // تهيئة EditStudent
+  window.init_EditStudent = function(params) {
+    const studentId = params.id; // جلب ID الطالب من المعلمات
+    if (!studentId) {
+      showMessage('معرف الطالب غير موجود. يرجى البحث عن الطالب أولاً.', 'error');
+      navigateTo('ViewAllStudents'); // العودة لصفحة عرض كل الطلاب
+      return;
+    }
+
+    let currentStudentData = null;
+    let allTeachers = [];
+    let selectedTeacherAvailableSlots = [];
+    let currentSelectedTimeSlots = []; // تخزين المواعيد المختارة لواجهة المستخدم
+
+    // ربط العناصر بـ DOM (يجب أن تكون العناصر موجودة في EditStudent.html)
+    const nameInput = document.getElementById('name');
+    const ageInput = document.getElementById('age');
+    const phoneInput = document.getElementById('phone');
+    const genderSelect = document.getElementById('gender');
+    const guardianNameInput = document.getElementById('guardianName');
+    const guardianPhoneInput = document.getElementById('guardianPhone');
+    const guardianRelationInput = document.getElementById('guardianRelation');
+    const subscriptionTypeSelect = document.getElementById('subscriptionType');
+    const durationSelect = document.getElementById('duration');
+    const paymentStatusSelect = document.getElementById('paymentStatus');
+    const paymentAmountInput = document.getElementById('paymentAmount');
+    const paymentDateInput = document.getElementById('paymentDate');
+    const teacherIdSelect = document.getElementById('teacherId');
+    const studentForm = document.getElementById('studentForm');
+    const pageTitle = document.getElementById('pageTitle');
+    const noTeacherSlotsMessage = document.getElementById('noTeacherSlotsMessage');
+    const timeSlotsGrid = document.getElementById('timeSlotsGrid');
+    const selectedTimeSlotsDisplay = document.getElementById('selectedTimeSlotsDisplay');
+    const selectedSlotsList = document.getElementById('selectedSlotsList');
+    const durationGroup = document.getElementById('durationGroup');
+
+    // إضافة المستمعين للأحداث (EventListeners)
+    if (subscriptionTypeSelect) subscriptionTypeSelect.onchange = handleSubscriptionTypeChange;
+    if (durationSelect) durationSelect.onchange = handleDurationChange;
+    if (teacherIdSelect) teacherIdSelect.onchange = handleTeacherChange;
+    if (studentForm) studentForm.onsubmit = handleUpdateStudent;
+
+
+    // دوال مساعدة لـ EditStudent
+    function fetchStudentDetails(id) {
+      showLoading('جاري تحميل بيانات الطالب...');
+      google.script.run
+        .withSuccessHandler(function(response) {
+          hideLoading();
+          if (response.success && response.student) {
+            currentStudentData = response.student;
+            allTeachers = response.teachers;
+            populateForm(response.student);
+            populateTeachersDropdown();
+            handleSubscriptionTypeChange(); // للتأكد من إظهار حقل المدة إذا لزم الأمر
+            if (studentForm) studentForm.style.display = 'block';
+            if (pageTitle) pageTitle.textContent = 'تعديل بيانات الطالب: ' + response.student.Name;
+          } else {
+            showMessage(response.message || 'لم يتم العثور على الطالب.', 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showMessage('فشل في تحميل بيانات الطالب: ' + error.message, 'error');
+          console.error('Error fetching student details:', error);
+        })
+        .getStudentAndTeachersData(id);
+    }
+
+    function populateForm(student) {
+      if (nameInput) nameInput.value = student.Name || '';
+      if (ageInput) ageInput.value = student.Age || '';
+      if (phoneInput) phoneInput.value = student.Phone || '';
+      if (genderSelect) genderSelect.value = student.Gender || 'غير محدد';
+      if (guardianNameInput) guardianNameInput.value = student.GuardianName || '';
+      if (guardianPhoneInput) guardianPhoneInput.value = student.GuardianPhone || '';
+      if (guardianRelationInput) guardianRelationInput.value = student.GuardianRelation || '';
+      if (subscriptionTypeSelect) subscriptionTypeSelect.value = student.SubscriptionType || 'حلقة تجريبية';
+      if (durationSelect) durationSelect.value = student.Duration || 'نصف ساعة';
+      if (paymentStatusSelect) paymentStatusSelect.value = student.PaymentStatus || 'لم يتم الدفع';
+      if (paymentAmountInput) paymentAmountInput.value = student.PaymentAmount || 0;
+      if (paymentDateInput) paymentDateInput.value = student.PaymentDate ? new Date(student.PaymentDate).toISOString().split('T')[0] : '';
+      if (teacherIdSelect) teacherIdSelect.value = student.TeacherID || '';
+
+      currentSelectedTimeSlots = JSON.parse(student.ScheduledAppointments || '[]');
+      handleTeacherChange(true);
+    }
+
+    function populateTeachersDropdown() {
+      if (!teacherIdSelect) return;
+      teacherIdSelect.innerHTML = '<option value="">-- اختر المعلم --</option>';
+      allTeachers.forEach(teacher => {
+        const option = document.createElement('option');
+        option.value = teacher.TeacherID;
+        option.textContent = teacher.Name;
+        teacherIdSelect.appendChild(option);
+      });
+      if (currentStudentData && currentStudentData.TeacherID) {
+          teacherIdSelect.value = currentStudentData.TeacherID;
+      }
+    }
+
+    function handleSubscriptionTypeChange() {
+        const subscriptionType = subscriptionTypeSelect?.value || 'حلقة تجريبية';
+        if (subscriptionType === 'حلقة تجريبية' || subscriptionType === 'مخصص') {
+            if (durationGroup) durationGroup.style.display = 'block';
+        } else {
+            if (durationGroup) durationGroup.style.display = 'none';
+        }
+        currentSelectedTimeSlots = [];
+        renderTeacherSlots();
+    }
+    
+    function handleDurationChange() {
+      currentSelectedTimeSlots = [];
+      renderTeacherSlots();
+    }
+
+    function handleTeacherChange(isInitialLoad = false) {
+      const teacherId = teacherIdSelect?.value || '';
+      if (!isInitialLoad && currentStudentData && currentStudentData.TeacherID !== teacherId) {
+        currentSelectedTimeSlots = [];
+      }
+      
+      selectedTeacherAvailableSlots = [];
+      if (noTeacherSlotsMessage) noTeacherSlotsMessage.style.display = 'none';
+
+      if (teacherId) {
+        showLoading('جاري تحميل مواعيد المعلم...');
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            if (response.success) {
+              selectedTeacherAvailableSlots = response.slots;
+              renderTeacherSlots();
+            } else {
+              showMessage(response.message, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showMessage('فشل تحميل مواعيد المعلم: ' + error.message, 'error');
+            console.error('Error fetching teacher slots:', error);
+          })
+          .getTeacherAvailableSlots(teacherId);
+      } else {
+        renderTeacherSlots();
+      }
+    }
+    
+    function renderTeacherSlots() {
+      if (!timeSlotsGrid) return;
+      timeSlotsGrid.innerHTML = '';
+      if (selectedTeacherAvailableSlots.length === 0 && (teacherIdSelect?.value || '')) {
+        if (noTeacherSlotsMessage) noTeacherSlotsMessage.style.display = 'block';
+        if (selectedTimeSlotsDisplay) selectedTimeSlotsDisplay.style.display = 'none';
+        return;
+      }
+      if (noTeacherSlotsMessage) noTeacherSlotsMessage.style.display = 'none';
+
+      const weekDays = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+      const slotsByDay = {};
+      weekDays.forEach(day => slotsByDay[day] = []);
+      selectedTeacherAvailableSlots.forEach(slot => {
+          slotsByDay[slot.dayOfWeek]?.push(slot);
+      });
+
+      weekDays.forEach(day => {
+        const slotsForDay = slotsByDay[day];
+        if (slotsForDay.length === 0) return;
+
+        slotsForDay.sort((a, b) => getTimeInMinutes(a.timeSlot) - getTimeInMinutes(b.timeSlot));
+
+        let dayHtml = `
+          <div class="day-slots-card">
+            <h5>${day}</h5>
+            <div class="slots-buttons-container">
+        `;
+        slotsForDay.forEach(slot => {
+          const isSelected = currentSelectedTimeSlots.some(s => s.DayOfWeek === day && s.TimeSlot === slot.timeSlot);
+          const isDisabled = slot.isBooked && slot.bookedBy !== currentStudentData.StudentID;
+          const buttonClass = `slot-button ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`;
+          const bookedByText = isDisabled ? ` (${allStudentsData.find(s => s.StudentID === slot.bookedBy)?.Name || 'محجوز'})` : '';
+
+          dayHtml += `
+            <button type="button" class="${buttonClass}"
+                    ${isDisabled ? 'disabled' : ''}
+                    onclick="toggleSlotSelection('${day}', '${slot.timeSlot}', ${isDisabled})">
+              ${formatTime12Hour(slot.timeSlot.split(' - ')[0])} ${bookedByText}
+            </button>
+          `;
+        });
+        dayHtml += `</div></div>`;
+        timeSlotsGrid.innerHTML += dayHtml;
+      });
+      renderSelectedSlotsDisplay();
+    }
+
+    function toggleSlotSelection(dayOfWeek, timeSlot, isDisabled) {
+      if (isDisabled) return;
+
+      const newSlot = { DayOfWeek: dayOfWeek, TimeSlot: timeSlot };
+      const isCurrentlySelected = currentSelectedTimeSlots.some(s => s.DayOfWeek === dayOfWeek && s.TimeSlot === timeSlot);
+
+      if (isCurrentlySelected) {
+        currentSelectedTimeSlots = currentSelectedTimeSlots.filter(s => !(s.DayOfWeek === dayOfWeek && s.TimeSlot === timeSlot));
+      } else {
+        const subscriptionType = subscriptionTypeSelect?.value || 'حلقة تجريبية';
+        let totalSlotsNeeded = SUBSCRIPTION_SLOTS_MAP[subscriptionType] || 0;
+
+        if (subscriptionType === 'مخصص') {
+          if (currentSelectedTimeSlots.length >= totalSlotsNeeded) {
+            showMessage(`لقد وصلت إلى الحد الأقصى (${totalSlotsNeeded}) من الخانات للاشتراك المخصص.`, 'warning');
+            return;
+          }
+        } else if (totalSlotsNeeded > 0 && currentSelectedTimeSlots.length >= totalSlotsNeeded) {
+            showMessage(`لقد وصلت إلى الحد الأقصى (${totalSlotsNeeded}) من الخانات لهذا الاشتراك (${subscriptionType}).`, 'warning');
+            return;
+        }
+
+        currentSelectedTimeSlots.push(newSlot);
+        currentSelectedTimeSlots.sort((a, b) => {
+            const weekDaysOrder = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+            const dayA = weekDaysOrder.indexOf(a.DayOfWeek);
+            const dayB = weekDaysOrder.indexOf(b.DayOfWeek);
+            if (dayA !== dayB) return dayA - dayB;
+            return getTimeInMinutes(a.TimeSlot) - getTimeInMinutes(b.TimeSlot);
+        });
+      }
+      renderSelectedSlotsDisplay();
+      renderTeacherSlots();
+    }
+
+    function renderSelectedSlotsDisplay() {
+      if (!selectedTimeSlotsDisplay || !selectedSlotsList) return;
+      
+      if (currentSelectedTimeSlots.length > 0) {
+        selectedTimeSlotsDisplay.style.display = 'block';
+        selectedSlotsList.innerHTML = ''; // مسح القائمة قبل إعادة بنائها
+        currentSelectedTimeSlots.forEach(slot => {
+          const li = document.createElement('li');
+          li.className = 'selected-slot-tag';
+          li.innerHTML = `${slot.DayOfWeek} ${formatTime12Hour(slot.TimeSlot.split(' - ')[0])} - ${formatTime12Hour(slot.TimeSlot.split(' - ')[1])}
+            <button type="button" onclick="toggleSlotSelection('${slot.DayOfWeek}', '${slot.TimeSlot}', false)" class="remove-slot-button">
+              &times;
+            </button>`;
+          selectedSlotsList.appendChild(li);
+        });
+      } else {
+        selectedTimeSlotsDisplay.style.display = 'none';
+      }
+    }
+
+    function handleUpdateStudent(e) {
+      e.preventDefault();
+      const updatedData = {
+        StudentID: studentId,
+        Name: nameInput?.value || '',
+        Age: parseInt(ageInput?.value) || 0,
+        Phone: phoneInput?.value || '',
+        Gender: genderSelect?.value || 'غير محدد',
+        GuardianName: guardianNameInput?.value || '',
+        GuardianPhone: guardianPhoneInput?.value || '',
+        GuardianRelation: guardianRelationInput?.value || '',
+        SubscriptionType: subscriptionTypeSelect?.value || 'حلقة تجريبية',
+        Duration: durationSelect?.value || 'نصف ساعة',
+        PaymentStatus: paymentStatusSelect?.value || 'لم يتم الدفع',
+        PaymentAmount: parseFloat(paymentAmountInput?.value) || 0,
+        PaymentDate: paymentDateInput?.value || '',
+        TeacherID: teacherIdSelect?.value || '',
+        ScheduledAppointments: currentSelectedTimeSlots
+      };
+
+      if (!updatedData.Name || !updatedData.Age || !updatedData.Phone || !updatedData.TeacherID) {
+        showMessage('الرجاء ملء جميع الحقول المطلوبة.', 'error');
+        return;
+      }
+      if (updatedData.SubscriptionType !== 'أخرى' && updatedData.ScheduledAppointments.length === 0) {
+        showMessage('الرجاء تحديد المواعيد الأسبوعية للطالب.', 'error');
+        return;
+      }
+      const calculatedTotalSlotsNeeded = SUBSCRIPTION_SLOTS_MAP[updatedData.SubscriptionType] || 0;
+      if (updatedData.SubscriptionType !== 'مخصص' && updatedData.SubscriptionType !== 'أخرى' && updatedData.ScheduledAppointments.length !== calculatedTotalSlotsNeeded) {
+        showMessage(`يجب عليك تحديد بالضبط ${calculatedTotalSlotsNeeded} خانة زمنية لهذا الاشتراك (${updatedData.SubscriptionType}).`, 'error');
+        return;
+      }
+
+      showLoading('جاري تحديث بيانات الطالب...');
+      google.script.run
+        .withSuccessHandler(function(response) {
+          hideLoading();
+          if (response.success) {
+            showMessage(response.message, 'success');
+            setTimeout(() => {
+              navigateTo('ViewAllStudents');
+            }, 2000);
+          } else {
+            showMessage(response.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showMessage('فشل التحديث: ' + error.message, 'error');
+          console.error('Error updating student:', error);
+        })
+        .updateStudent(studentId, updatedData);
+    }
+
+    // تهيئة AddStudent
+    let addStudentAllTeachers = [];
+    let addStudentSelectedTeacherAvailableSlots = [];
+    let addStudentSelectedTimeSlots = [];
+
+    window.init_AddStudent = function() {
+        const nameInput = document.getElementById('name');
+        const ageInput = document.getElementById('age');
+        const phoneInput = document.getElementById('phone');
+        const genderSelect = document.getElementById('gender');
+        const guardianNameInput = document.getElementById('guardianName');
+        const guardianPhoneInput = document.getElementById('guardianPhone');
+        const guardianRelationInput = document.getElementById('guardianRelation');
+        const subscriptionTypeSelect = document.getElementById('subscriptionType');
+        const durationSelect = document.getElementById('duration');
+        const paymentStatusSelect = document.getElementById('paymentStatus');
+        const paymentAmountInput = document.getElementById('paymentAmount');
+        const paymentDateInput = document.getElementById('paymentDate');
+        const teacherIdSelect = document.getElementById('teacherId');
+        const studentForm = document.getElementById('studentForm');
+
+        const noTeacherSlotsMessage = document.getElementById('noTeacherSlotsMessage');
+        const timeSlotsGrid = document.getElementById('timeSlotsGrid');
+        const selectedTimeSlotsDisplay = document.getElementById('selectedTimeSlotsDisplay');
+        const selectedSlotsList = document.getElementById('selectedSlotsList');
+        const durationGroup = document.getElementById('durationGroup');
+
+        // إضافة المستمعين للأحداث
+        if (subscriptionTypeSelect) subscriptionTypeSelect.onchange = addStudentHandleSubscriptionTypeChange;
+        if (durationSelect) durationSelect.onchange = addStudentHandleDurationChange;
+        if (teacherIdSelect) teacherIdSelect.onchange = addStudentHandleTeacherChange;
+        if (studentForm) studentForm.onsubmit = addStudentHandleSubmit;
+
+        // جلب المعلمين
+        showLoading('جاري تحميل المعلمين...');
+        google.script.run
+            .withSuccessHandler(function(response) {
+                hideLoading();
+                if (response.success) {
+                    addStudentAllTeachers = response.teachers;
+                    addStudentPopulateTeachersDropdown();
+                } else {
+                    showMessage(response.message, 'error');
+                }
+            })
+            .withFailureHandler(function(error) {
+                hideLoading();
+                showMessage('فشل تحميل المعلمين: ' + error.message, 'error');
+                console.error('Error fetching teachers:', error);
+            })
+            .getAllTeachers(); // دالة في Code.gs لجلب المعلمين فقط
+    };
+
+    function addStudentPopulateTeachersDropdown() {
+        const select = document.getElementById('teacherId');
+        if (!select) return;
+        select.innerHTML = '<option value="">-- اختر المعلم --</option>';
+        addStudentAllTeachers.forEach(teacher => {
+            const option = document.createElement('option');
+            option.value = teacher.TeacherID;
+            option.textContent = teacher.Name;
+            select.appendChild(option);
+        });
+    }
+
+    function addStudentHandleSubscriptionTypeChange() {
+        const subscriptionType = document.getElementById('subscriptionType')?.value || 'حلقة تجريبية';
+        const durationGroup = document.getElementById('durationGroup');
+        if (subscriptionType === 'حلقة تجريبية' || subscriptionType === 'مخصص') {
+            if (durationGroup) durationGroup.style.display = 'block';
+        } else {
+            if (durationGroup) durationGroup.style.display = 'none';
+        }
+        addStudentSelectedTimeSlots = [];
+        addStudentRenderTeacherSlots();
+    }
+    
+    function addStudentHandleDurationChange() {
+        addStudentSelectedTimeSlots = [];
+        addStudentRenderTeacherSlots();
+    }
+
+    function addStudentHandleTeacherChange() {
+        const teacherId = document.getElementById('teacherId')?.value || '';
+        addStudentSelectedTeacherAvailableSlots = [];
+        if (document.getElementById('noTeacherSlotsMessage')) document.getElementById('noTeacherSlotsMessage').style.display = 'none';
+
+        if (teacherId) {
+            showLoading('جاري تحميل مواعيد المعلم...');
+            google.script.run
+                .withSuccessHandler(function(response) {
+                    hideLoading();
+                    if (response.success) {
+                        addStudentSelectedTeacherAvailableSlots = response.slots;
+                        addStudentRenderTeacherSlots();
+                    } else {
+                        showMessage(response.message, 'error');
+                    }
+                })
+                .withFailureHandler(function(error) {
+                    hideLoading();
+                    showMessage('فشل تحميل مواعيد المعلم: ' + error.message, 'error');
+                    console.error('Error fetching teacher slots:', error);
+                })
+                .getTeacherAvailableSlots(teacherId);
+        } else {
+            addStudentRenderTeacherSlots();
+        }
+    }
+
+    function addStudentRenderTeacherSlots() {
+        const timeSlotsGrid = document.getElementById('timeSlotsGrid');
+        if (!timeSlotsGrid) return;
+        timeSlotsGrid.innerHTML = '';
+        if (addStudentSelectedTeacherAvailableSlots.length === 0 && (document.getElementById('teacherId')?.value || '')) {
+            if (document.getElementById('noTeacherSlotsMessage')) document.getElementById('noTeacherSlotsMessage').style.display = 'block';
+            if (document.getElementById('selectedTimeSlotsDisplay')) document.getElementById('selectedTimeSlotsDisplay').style.display = 'none';
+            return;
+        }
+        if (document.getElementById('noTeacherSlotsMessage')) document.getElementById('noTeacherSlotsMessage').style.display = 'none';
+
+        const weekDays = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+        const slotsByDay = {};
+        weekDays.forEach(day => slotsByDay[day] = []);
+        addStudentSelectedTeacherAvailableSlots.forEach(slot => {
+            slotsByDay[slot.dayOfWeek]?.push(slot);
+        });
+
+        weekDays.forEach(day => {
+            const slotsForDay = slotsByDay[day];
+            if (slotsForDay.length === 0) return;
+
+            slotsForDay.sort((a, b) => getTimeInMinutes(a.timeSlot) - getTimeInMinutes(b.timeSlot));
+
+            let dayHtml = `
+                <div class="day-slots-card">
+                    <h5>${day}</h5>
+                    <div class="slots-buttons-container">
+            `;
+            slotsForDay.forEach(slot => {
+                const isSelected = addStudentSelectedTimeSlots.some(s => s.DayOfWeek === day && s.TimeSlot === slot.timeSlot);
+                const isDisabled = slot.isBooked;
+                const buttonClass = `slot-button ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`;
+                const bookedByText = isDisabled ? ` (${addStudentAllTeachers.find(t => t.TeacherID === slot.bookedBy)?.Name || 'محجوز'})` : '';
+
+                dayHtml += `
+                    <button type="button" class="${buttonClass}"
+                            ${isDisabled ? 'disabled' : ''}
+                            onclick="addStudentToggleSlotSelection('${day}', '${slot.timeSlot}', ${isDisabled})">
+                        ${formatTime12Hour(slot.timeSlot.split(' - ')[0])} ${bookedByText}
+                    </button>
+                `;
+            });
+            dayHtml += `</div></div>`;
+            timeSlotsGrid.innerHTML += dayHtml;
+        });
+        addStudentRenderSelectedSlotsDisplay();
+    }
+
+    function addStudentToggleSlotSelection(dayOfWeek, timeSlot, isDisabled) {
+        if (isDisabled) return;
+
+        const newSlot = { DayOfWeek: dayOfWeek, TimeSlot: timeSlot };
+        const isCurrentlySelected = addStudentSelectedTimeSlots.some(s => s.DayOfWeek === dayOfWeek && s.TimeSlot === timeSlot);
+
+        if (isCurrentlySelected) {
+            addStudentSelectedTimeSlots = addStudentSelectedTimeSlots.filter(s => !(s.DayOfWeek === dayOfWeek && s.TimeSlot === timeSlot));
+        } else {
+            const subscriptionType = document.getElementById('subscriptionType')?.value || 'حلقة تجريبية';
+            let totalSlotsNeeded = SUBSCRIPTION_SLOTS_MAP[subscriptionType] || 0;
+
+            if (subscriptionType === 'مخصص') {
+                if (addStudentSelectedTimeSlots.length >= totalSlotsNeeded) {
+                    showMessage(`لقد وصلت إلى الحد الأقصى (${totalSlotsNeeded}) من الخانات للاشتراك المخصص.`, 'warning');
+                    return;
+                }
+            } else if (totalSlotsNeeded > 0 && addStudentSelectedTimeSlots.length >= totalSlotsNeeded) {
+                showMessage(`لقد وصلت إلى الحد الأقصى (${totalSlotsNeeded}) من الخانات لهذا الاشتراك (${subscriptionType}).`, 'warning');
+                return;
+            }
+
+            addStudentSelectedTimeSlots.push(newSlot);
+            addStudentSelectedTimeSlots.sort((a, b) => {
+                const weekDaysOrder = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+                const dayA = weekDaysOrder.indexOf(a.DayOfWeek);
+                const dayB = weekDaysOrder.indexOf(b.DayOfWeek);
+                if (dayA !== dayB) return dayA - dayB;
+                return getTimeInMinutes(a.TimeSlot) - getTimeInMinutes(b.TimeSlot);
+            });
+        }
+        addStudentRenderSelectedSlotsDisplay();
+        addStudentRenderTeacherSlots();
+    }
+
+    function addStudentRenderSelectedSlotsDisplay() {
+        const displayDiv = document.getElementById('selectedTimeSlotsDisplay');
+        const list = document.getElementById('selectedSlotsList');
+        if (!displayDiv || !list) return;
+
+        if (addStudentSelectedTimeSlots.length > 0) {
+            displayDiv.style.display = 'block';
+            list.innerHTML = '';
+            addStudentSelectedTimeSlots.forEach(slot => {
+                const li = document.createElement('li');
+                li.className = 'selected-slot-tag';
+                li.innerHTML = `${slot.DayOfWeek} ${formatTime12Hour(slot.TimeSlot.split(' - ')[0])} - ${formatTime12Hour(slot.TimeSlot.split(' - ')[1])}
+                    <button type="button" onclick="addStudentToggleSlotSelection('${slot.DayOfWeek}', '${slot.TimeSlot}', false)" class="remove-slot-button">
+                        &times;
+                    </button>`;
+                list.appendChild(li);
+            });
+        } else {
+            displayDiv.style.display = 'none';
+        }
+    }
+
+    function addStudentHandleSubmit(e) {
+      e.preventDefault();
+      const updatedData = {
+        Name: document.getElementById('name')?.value || '',
+        Age: parseInt(document.getElementById('age')?.value) || 0,
+        Phone: document.getElementById('phone')?.value || '',
+        Gender: document.getElementById('gender')?.value || 'غير محدد',
+        GuardianName: document.getElementById('guardianName')?.value || '',
+        GuardianPhone: document.getElementById('guardianPhone')?.value || '',
+        GuardianRelation: document.getElementById('guardianRelation')?.value || '',
+        SubscriptionType: document.getElementById('subscriptionType')?.value || 'حلقة تجريبية',
+        Duration: document.getElementById('duration')?.value || 'نصف ساعة',
+        PaymentStatus: document.getElementById('paymentStatus')?.value || 'لم يتم الدفع',
+        PaymentAmount: parseFloat(document.getElementById('paymentAmount')?.value) || 0,
+        PaymentDate: document.getElementById('paymentDate')?.value || '',
+        TeacherID: document.getElementById('teacherId')?.value || '',
+        ScheduledAppointments: addStudentSelectedTimeSlots
+      };
+
+      if (!updatedData.Name || !updatedData.Age || !updatedData.Phone || !updatedData.TeacherID) {
+        showMessage('الرجاء ملء جميع الحقول المطلوبة.', 'error');
+        return;
+      }
+      if (updatedData.SubscriptionType !== 'أخرى' && updatedData.ScheduledAppointments.length === 0) {
+        showMessage('الرجاء تحديد المواعيد الأسبوعية للطالب.', 'error');
+        return;
+      }
+      const calculatedTotalSlotsNeeded = SUBSCRIPTION_SLOTS_MAP[updatedData.SubscriptionType] || 0;
+      if (updatedData.SubscriptionType !== 'مخصص' && updatedData.SubscriptionType !== 'أخرى' && updatedData.ScheduledAppointments.length !== calculatedTotalSlotsNeeded) {
+        showMessage(`يجب عليك تحديد بالضبط ${calculatedTotalSlotsNeeded} خانة زمنية لهذا الاشتراك (${updatedData.SubscriptionType}).`, 'error');
+        return;
+      }
+
+      showLoading('جاري تسجيل الطالب...');
+      google.script.run
+        .withSuccessHandler(function(response) {
+          hideLoading();
+          if (response.success) {
+            showMessage(response.message, 'success');
+            setTimeout(() => {
+              navigateTo('ViewAllStudents');
+            }, 2000);
+          } else {
+            showMessage(response.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          hideLoading();
+          showMessage('فشل التسجيل: ' + error.message, 'error');
+          console.error('Error adding student:', error);
+        })
+        .addStudent(updatedData);
+    }
+
+
+
+    document.addEventListener('DOMContentLoaded', function() {
+  const userRole = localStorage.getItem('userRole');
+  let pageToLoad = localStorage.getItem('currentPage') || 'LoginPage';
+  let pageParams = JSON.parse(localStorage.getItem('currentPageParams') || '{}');
+
+  if (!userRole) {
+    pageToLoad = 'LoginPage';
+    localStorage.removeItem('currentPage');
+    localStorage.removeItem('currentPageParams');
+  } else {
+    if (userRole === 'Admin' && pageToLoad === 'TeacherDashboard') {
+      pageToLoad = 'AdminDashboard';
+      localStorage.setItem('currentPage', 'AdminDashboard');
+    } else if (userRole === 'Teacher' && pageToLoad === 'AdminDashboard') {
+      pageToLoad = 'TeacherDashboard';
+      localStorage.setItem('currentPage', 'TeacherDashboard');
+    }
+  }
+
+  loadPageContent(pageToLoad, pageParams, function() {
+      hideLoading();
+  });
+});
+
+</script>
